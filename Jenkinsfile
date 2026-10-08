@@ -36,19 +36,20 @@ pipeline {
 
 
         stage('Test Docker Image') {
-
             steps {
-
                 bat '''
                 docker rm -f flask-test 2>NUL || echo No previous test container
 
                 docker run -d --name flask-test -p 5001:5000 %DOCKER_IMAGE%:%IMAGE_TAG%
 
-                timeout /t 5 /nobreak
+                powershell -Command "Start-Sleep -Seconds 8"
 
-                curl -f http://localhost:5001
+                docker ps
+
+                docker logs flask-test
+
+                curl.exe --retry 5 --retry-delay 2 --retry-connrefused -f http://127.0.0.1:5001/
                 '''
-
             }
         }
 
