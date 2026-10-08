@@ -4,7 +4,7 @@ pipeline {
 
     environment {
 
-        DOCKER_IMAGE = 'YOUR_DOCKERHUB_USERNAME/flask-app'
+        DOCKER_IMAGE = 'jalalsherazi786/flask-app'
 
         IMAGE_TAG = "${BUILD_NUMBER}"
 
