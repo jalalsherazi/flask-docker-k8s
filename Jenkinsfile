@@ -147,7 +147,7 @@ pipeline {
 
             bat '''
             docker rm -f flask-test 2>NUL || echo Test container already removed
-            
+            exit /b 0
             '''
 
         }
