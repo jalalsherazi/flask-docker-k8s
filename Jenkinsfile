@@ -1,87 +1,170 @@
 pipeline {
+
     agent any
 
     environment {
-        IMAGE_NAME = 'flask-app'
-        IMAGE_TAG = 'latest'
+
+        DOCKER_IMAGE = 'YOUR_DOCKERHUB_USERNAME/flask-app'
+
+        IMAGE_TAG = "${BUILD_NUMBER}"
+
     }
 
     stages {
 
         stage('Checkout') {
+
             steps {
+
                 checkout scm
+
             }
         }
+
 
         stage('Build Docker Image') {
+
             steps {
+
                 bat '''
-                @FOR /f "tokens=*" %%i IN ('minikube docker-env --shell cmd') DO @%%i
-                docker build -t %IMAGE_NAME%:%IMAGE_TAG% .
+                docker build -t %DOCKER_IMAGE%:%IMAGE_TAG% .
+                docker tag %DOCKER_IMAGE%:%IMAGE_TAG% %DOCKER_IMAGE%:latest
                 '''
+
             }
         }
 
-        stage('Test Docker Image') {
-            steps {
-                bat '''
-                @FOR /f "tokens=*" %%i IN ('minikube docker-env --shell cmd') DO @%%i
 
+        stage('Test Docker Image') {
+
+            steps {
+
+                bat '''
                 docker rm -f flask-test 2>NUL || echo No previous test container
 
-                docker run -d --name flask-test -p 5001:5000 %IMAGE_NAME%:%IMAGE_TAG%
+                docker run -d --name flask-test -p 5001:5000 %DOCKER_IMAGE%:%IMAGE_TAG%
 
                 timeout /t 5 /nobreak
 
                 curl -f http://localhost:5001
-
-                docker stop flask-test
-                docker rm flask-test
                 '''
+
             }
         }
 
-        stage('Deploy to Kubernetes') {
+
+        stage('Docker Hub Login') {
+
             steps {
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKERHUB_USERNAME',
+                        passwordVariable: 'DOCKERHUB_TOKEN'
+                    )
+                ]) {
+
+                    bat '''
+                    echo %DOCKERHUB_TOKEN% | docker login -u %DOCKERHUB_USERNAME% --password-stdin
+                    '''
+
+                }
+            }
+        }
+
+
+        stage('Push Docker Image') {
+
+            steps {
+
+                bat '''
+                docker push %DOCKER_IMAGE%:%IMAGE_TAG%
+                docker push %DOCKER_IMAGE%:latest
+                '''
+
+            }
+        }
+
+
+        stage('Deploy to Kubernetes') {
+
+            steps {
+
                 bat '''
                 kubectl apply -f k8s/deployment.yaml
                 kubectl apply -f k8s/service.yaml
                 '''
+
             }
         }
 
-        stage('Restart Deployment') {
+
+        stage('Update Kubernetes Image') {
+
             steps {
+
                 bat '''
-                kubectl rollout restart deployment/flask-deployment
+                kubectl set image deployment/flask-deployment flask-container=%DOCKER_IMAGE%:%IMAGE_TAG%
+                '''
+
+            }
+        }
+
+
+        stage('Wait for Deployment') {
+
+            steps {
+
+                bat '''
                 kubectl rollout status deployment/flask-deployment --timeout=120s
                 '''
+
             }
         }
 
+
         stage('Verify Deployment') {
+
             steps {
+
                 bat '''
                 kubectl get deployments
                 kubectl get pods
                 kubectl get services
                 '''
+
             }
         }
+
     }
+
 
     post {
+
         always {
-            bat 'docker rm -f flask-test 2>NUL || echo Test container already removed'
+
+            bat '''
+            docker rm -f flask-test 2>NUL || echo Test container already removed
+            docker logout
+            '''
+
         }
+
 
         success {
+
             echo 'CI/CD Pipeline completed successfully!'
+
         }
 
+
         failure {
-            echo 'CI/CD Pipeline failed. Check the failed stage.'
+
+            echo 'Pipeline failed. Check the failed stage.'
+
         }
+
     }
+
 }
